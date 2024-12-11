@@ -228,6 +228,51 @@ class APIClient:
             st.error(f"Error fetching webpage content: {e}")
             return None
 
+    @staticmethod
+    def generate_summary_and_recommendation(keyword_sentiment: str, webpage_sentiment: str) -> str:
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {Config.OPENAI_API_KEY}",
+        }
+
+        prompt = (
+            "You are an expert in sentiment analysis and content optimization. Based on the following data, provide a concise summary and recommendation. "
+            "The data includes the overall sentiment of a keyword and the sentiment of a webpage. Use this format: "
+            "'The overall sentiment for the keyword is {keyword_sentiment}, but the webpage sentiment is {webpage_sentiment}. Recommendation: {suggestion}.'\n\n"
+            "Data:\n"
+            f"- Keyword Sentiment: {keyword_sentiment}\n"
+            f"- Webpage Sentiment: {webpage_sentiment}\n\n"
+            "Consider the following when crafting your recommendation:\n"
+            "- If the webpage sentiment is less positive than the keyword sentiment, suggest ways to make the webpage more positive.\n"
+            "- If the webpage sentiment is more positive, suggest maintaining or enhancing the positive aspects.\n"
+            "- Provide actionable insights for content improvement."
+        )
+
+        payload = {
+            "model": "gpt-4o",
+            "messages": [
+                {"role": "system", "content": prompt}
+            ],
+            "temperature": 0.5,
+            "max_tokens": 1024,
+            "top_p": 1,
+            "frequency_penalty": 0,
+            "presence_penalty": 0,
+        }
+
+        try:
+            response = requests.post(
+                Config.OPENAI_API_URL, headers=headers, json=payload
+            )
+            response.raise_for_status()
+            analysis = response.json()
+            if "choices" in analysis and len(analysis["choices"]) > 0:
+                return analysis["choices"][0]["message"]["content"].strip()
+            else:
+                return "Unable to generate a summary and recommendation."
+        except requests.exceptions.RequestException as e:
+            return f"Error generating summary: {e}"
+
 
 # Data Processing Utilities
 class DataProcessor:
@@ -520,7 +565,14 @@ def main():
                 comparison_df = pd.DataFrame(comparison_data)
                 st.bar_chart(comparison_df.set_index("Metric"))
 
+                # Generate AI summary and recommendation
+                keyword_sentiment = pd.Series(comparison_results["serp_primary_emotions"]).mode()[0]
+                webpage_sentiment = comparison_results["webpage_primary_emotion"]
+                summary = APIClient.generate_summary_and_recommendation(keyword_sentiment, webpage_sentiment)
 
+                # Display AI summary
+                st.subheader("📝 AI Summary and Recommendation")
+                st.markdown(summary)
 
             # CSV Export
             export_filename = f"sentiment_analysis_{keyword}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
